@@ -1,9 +1,9 @@
 
-.happiness:contains the readme.md document of the happiness.csv dataset along with the png 
-.goodreads:contains the readme.md document of the goodreads.csv dataset along with the png
-.media:contains the readme.md document of the media.csv dataset along with the png
+:contains the readme.md document of the happiness.csv dataset along with the png 
+:contains the readme.md document of the goodreads.csv dataset along with the png
+:contains the readme.md document of the media.csv dataset along with the png
 autolysis.py:contains the coding
-license.md:contains the license
+:contains the license
 
 Automated Data Loading: Simply upload a dataset, and the system will automatically load, analyze, and process the data.
 Summary Statistics: The tool generates detailed statistical summaries for both numerical and categorical data, giving insights into distribution, trends, and relationships.
