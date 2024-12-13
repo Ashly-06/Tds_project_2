@@ -1,7 +1,7 @@
 This repository contains:
-happiness/:contains the readme.md document of the happiness.csv dataset along with the png 
-goodreads/:contains the readme.md document of the goodreads.csv dataset along with the png
-media/:contains the readme.md document of the media.csv dataset along with the png
+.happiness:contains the readme.md document of the happiness.csv dataset along with the png 
+.goodreads:contains the readme.md document of the goodreads.csv dataset along with the png
+.media:contains the readme.md document of the media.csv dataset along with the png
 autolysis.py:contains the coding
 license.md:contains the license
 
