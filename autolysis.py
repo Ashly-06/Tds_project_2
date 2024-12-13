@@ -1,118 +1,159 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = [
-#   "pandas",
-#   "seaborn",
-#   "matplotlib",
-#   "httpx",
-#   "chardet",
-#   "python-dotenv",
-# ]
-# ///
 
+! mkdir foldername
 import os
-import sys
 import pandas as pd
 import seaborn as sns
-import matplotlib
 import matplotlib.pyplot as plt
-import httpx
-import chardet
-from dotenv import load_dotenv
+import requests
+import json
 
-# Force non-interactive matplotlib backend
-matplotlib.use('Agg')
+# Prompt the user for their API token and the folder location
+api_proxy_token = input("Please enter your API proxy token: ")
+folder_path = input("Please enter the folder path where the CSV files are located: ")
 
-# Load environment variables
-load_dotenv()
+api_proxy_base_url = "https://aiproxy.sanand.workers.dev/openai/v1"
 
-# Constants
-API_URL = "https://aiproxy.sanand.workers.dev/openai/v1/chat/completions"
-AIPROXY_TOKEN = os.getenv("eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6IjIzZjIwMDAzMTlAZHMuc3R1ZHkuaWl0bS5hYy5pbiJ9.LG52USQ3LyaV7Elw4YT9WJRTYswATJVN7X3wU-41xj0")
-file_path="C:\Users\Admin\Desktop\aaaaaaaaaaaaaaaaaaaaaaaaa"
-if not AIPROXY_TOKEN:
-    raise ValueError("API token not set. Please set AIPROXY_TOKEN in the environment.")
-
-def load_data(file_path):
-    """Load CSV data with encoding detection."""
+def read_csv(filename):
+    """Read the CSV file and return a DataFrame."""
     try:
-        with open(file_path, 'rb') as f:
-            result = chardet.detect(f.read())
-        encoding = result['encoding']
-        return pd.read_csv(file_path, encoding=encoding)
+        df = pd.read_csv(filename, encoding="utf-8")
+        print(f"Dataset loaded: {filename}")
+        return df
+    except UnicodeDecodeError:
+        print(f"Encoding issue detected with {filename}. Trying 'latin1'.")
+        return pd.read_csv(filename, encoding="latin1")
     except Exception as e:
-        print(f"Error loading file: {e}")
-        sys.exit(1)
+        print(f"Error loading {filename}: {e}")
+        exit()
 
 def analyze_data(df):
-    """Perform basic data analysis."""
-    numeric_df = df.select_dtypes(include=['number'])  # Select only numeric columns
+    """Perform basic analysis on the dataset."""
     analysis = {
-        'summary': df.describe(include='all').to_dict(),
-        'missing_values': df.isnull().sum().to_dict(),
-        'correlation': numeric_df.corr().to_dict()  # Compute correlation only on numeric columns
+        "shape": df.shape,
+        "columns": df.columns.tolist(),
+        "missing_values": df.isnull().sum().to_dict(),
+        "summary_statistics": df.describe(include="all").to_dict()
     }
     return analysis
 
-def visualize_data(df, output_dir):
-    """Generate and save visualizations."""
-    sns.set(style="whitegrid")
-    numeric_columns = df.select_dtypes(include=['number']).columns
-    for column in numeric_columns:
-        plt.figure()
-        sns.histplot(df[column].dropna(), kde=True)
-        plt.title(f'Distribution of {column}')
-        plt.savefig(os.path.join(output_dir, f'{column}_distribution.png'))
+def visualize_data(df, output_prefix):
+    """Generate visualizations for the dataset."""
+    charts = []
+
+    # Example 1: Correlation Heatmap (if numeric data exists)
+    numeric_columns = df.select_dtypes(include=["number"]).columns
+    if len(numeric_columns) > 0:
+        plt.figure(figsize=(14, 12))  # Increased figure size for clarity
+        heatmap = sns.heatmap(
+            df[numeric_columns].corr(),
+            annot=True,
+            cmap="coolwarm",
+            fmt=".2f",
+            cbar_kws={'shrink': 0.8}
+        )
+        heatmap.set_title("Correlation Heatmap", fontsize=16, pad=20)
+        heatmap.set_xlabel("Features", fontsize=14, labelpad=20)
+        heatmap.set_ylabel("Features", fontsize=14, labelpad=20)
+        plt.xticks(fontsize=12, rotation=45, ha="right")  # Rotate and align x-axis labels
+        plt.yticks(fontsize=12)
+        plt.tight_layout(pad=3.0)  # Adjust layout
+        heatmap_file = f"{output_prefix}_heatmap.png"
+        plt.savefig(heatmap_file, dpi=300)  # Save high-resolution image
+        charts.append(heatmap_file)
         plt.close()
 
-def generate_narrative(analysis):
-    """Generate narrative using LLM."""
+    # Example 2: Bar Plot for the first categorical column
+    categorical_columns = df.select_dtypes(include=["object"]).columns
+    if len(categorical_columns) > 0:
+        plt.figure(figsize=(14, 8))  # Increased figure size
+        top_categories = df[categorical_columns[0]].value_counts().head(10)
+        top_categories.sort_values().plot(kind="barh", color="skyblue")  # Horizontal bar plot
+        plt.title(f"Top 10 {categorical_columns[0]} Categories", fontsize=16, pad=20)
+        plt.xlabel("Frequency", fontsize=14, labelpad=15)
+        plt.ylabel(categorical_columns[0], fontsize=14, labelpad=15)
+        plt.xticks(fontsize=12)
+        plt.yticks(fontsize=12)
+        plt.tight_layout(pad=3.0)  # Adjust layout
+        barplot_file = f"{output_prefix}_barplot.png"
+        plt.savefig(barplot_file, dpi=300)
+        charts.append(barplot_file)
+        plt.close()
+
+    return charts
+
+def narrate_story(analysis, charts, filename):
+    """Use GPT-4o-Mini to narrate a story about the analysis."""
+    summary_prompt = f"""
+    I analyzed a dataset from {filename}. It has the following details:
+    - Shape: {analysis['shape']}
+    - Columns: {analysis['columns']}
+    - Missing Values: {analysis['missing_values']}
+    - Summary Statistics: {analysis['summary_statistics']}
+
+    Write a short summary of the dataset, key insights, and recommendations. Refer to the charts where necessary.
+    """
+    url = f"{api_proxy_base_url}/chat/completions"
     headers = {
-        'Authorization': f'Bearer {AIPROXY_TOKEN}',
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_proxy_token}"
     }
-    prompt = f"Provide a detailed analysis based on the following data summary: {analysis}"
     data = {
         "model": "gpt-4o-mini",
-        "messages": [{"role": "user", "content": prompt}]
+        "messages": [{"role": "user", "content": summary_prompt}],
+        "temperature": 0.7
     }
+
     try:
-        response = httpx.post(API_URL, headers=headers, json=data, timeout=30.0)
+        response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
-        return response.json()['choices'][0]['message']['content']
-    except httpx.HTTPStatusError as e:
-        print(f"HTTP error occurred: {e}")
-    except httpx.RequestError as e:
-        print(f"Request error occurred: {e}")
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-    return "Narrative generation failed due to an error."
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException as e:
+        return f"Story generation failed: {e}"
+
+def save_markdown(story, charts, output_file):
+    """Save the narrated story and chart references to a README.md file."""
+    with open(output_file, "w") as f:
+        f.write("# Analysis Report\n\n")
+        f.write(story + "\n\n")
+        for chart in charts:
+            f.write(f"![Chart](./{chart})\n")
 
 def main():
-    import argparse
+    # Change to the specified folder
+    try:
+        os.chdir(folder_path)
+    except Exception as e:
+        print(f"Error accessing folder {folder_path}: {e}")
+        return
 
-    parser = argparse.ArgumentParser(description="Analyze datasets and generate insights.")
-    parser.add_argument("file_path", help="Path to the dataset CSV file.")
-    parser.add_argument("-o", "--output_dir", default="output", help="Directory to save outputs.")
-    args = parser.parse_args()
+    # Automatically process all CSV files in the folder
+    csv_files = [f for f in os.listdir() if f.endswith('.csv')]
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    if not csv_files:
+        print("No CSV files found in the directory.")
+        return
 
-    # Load data
-    df = load_data(args.file_path)
+    for filename in csv_files:
+        print(f"Processing {filename}...")
 
-    # Analyze data
-    analysis = analyze_data(df)
+        # Load dataset
+        df = read_csv(filename)
 
-    # Visualize data
-    visualize_data(df, args.output_dir)
+        # Analyze dataset
+        analysis = analyze_data(df)
 
-    # Generate narrative
-    narrative = generate_narrative(analysis)
+        # Visualize data
+        output_prefix = filename.split(".")[0]
+        charts = visualize_data(df, output_prefix)
 
-    # Save narrative
-    with open(os.path.join(args.output_dir, 'README.md'), 'w') as f:
-        f.write(narrative)
+        # Narrate story
+        story = narrate_story(analysis, charts, filename)
+
+        # Save README.md
+        readme_file = f"README_{output_prefix}.md"
+        save_markdown(story, charts, readme_file)
+        print(f"Analysis completed for {filename}. Check {readme_file} and charts.")
 
 if __name__ == "__main__":
     main()
